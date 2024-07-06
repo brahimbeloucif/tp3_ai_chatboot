@@ -1,0 +1,217 @@
+import 'package:flutter/material.dart';
+import 'RuleEngine.dart';
+
+class ChatPage extends StatefulWidget {
+  const ChatPage({Key? key}) : super(key: key);
+
+  @override
+  _ChatPageState createState() => _ChatPageState();
+}
+
+class _ChatPageState extends State<ChatPage> {
+  List<Widget> messages = [];
+  RuleEngine ruleEngine = RuleEngine();
+  TextEditingController textController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    // إضافة السؤال الأول إلى الواجهة عند التحميل
+    messages.add(_createBotMessage(ruleEngine.getQuestion(ruleEngine.currentRuleKey)));
+  }
+
+  void _handleResponse(String response, {bool fromButton = false}) {
+    setState(() {
+      if (fromButton) {
+        // إضافة رد المستخدم إلى الواجهة عند استخدام الأزرار
+        messages.add(_createUserMessage(response == 'yes' ? 'Yes' : 'No'));
+      } else {
+        // إضافة رد المستخدم عند الكتابة يدويا
+        messages.add(_createUserMessage(response));
+      }
+      // تحديث الخطوة التالية بناءً على الرد
+      String nextStep = ruleEngine.getNextStep(ruleEngine.currentRuleKey, response);
+      if (nextStep != 'end') {
+        ruleEngine.currentRuleKey = nextStep;
+        messages.add(_createBotMessage(ruleEngine.getQuestion(nextStep)));
+      } else {
+        messages.add(_createBotMessage(ruleEngine.getConclusion()));
+      }
+      textController.clear();
+    });
+  }
+
+  Widget _createUserMessage(String message) {
+    return Align(
+      alignment: Alignment.centerRight,
+      child: Container(
+        margin: EdgeInsets.symmetric(vertical: 5, horizontal: 10),
+        padding: EdgeInsets.symmetric(vertical: 10, horizontal: 15),
+        decoration: BoxDecoration(
+          color: Colors.blue[100],
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Text(message, style: TextStyle(color: Colors.black)),
+      ),
+    );
+  }
+
+  Widget _createBotMessage(String message) {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Container(
+        margin: EdgeInsets.symmetric(vertical: 5, horizontal: 10),
+        padding: EdgeInsets.symmetric(vertical: 10, horizontal: 15),
+        decoration: BoxDecoration(
+          color: Colors.green[100],
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Text(message, style: TextStyle(color: Colors.black)),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('Weather ChatBot'),
+        actions: [
+          IconButton(
+            icon: Icon(Icons.restart_alt),
+            onPressed: () => setState(() {
+              messages.clear();
+              ruleEngine.reset();
+              messages.add(_createBotMessage(ruleEngine.getQuestion('start')));
+            }),
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+          Expanded(
+            child: ListView.builder(
+              itemCount: messages.length,
+              itemBuilder: (context, index) => messages[index],
+            ),
+          ),
+          TextField(
+            controller: textController,
+            decoration: InputDecoration(
+              hintText: 'Type your observation here...',
+              suffixIcon: IconButton(
+                icon: Icon(Icons.send),
+                onPressed: () {
+                  if (textController.text.isNotEmpty) {
+                    _handleResponse(textController.text);
+                  }
+                },
+              ),
+            ),
+            onSubmitted: (text) {
+              if (text.isNotEmpty) {
+                _handleResponse(text);
+              }
+            },
+          ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              ElevatedButton(
+                onPressed: () => _handleResponse('yes', fromButton: true),
+                child: Text('Yes'),
+              ),
+              ElevatedButton(
+                onPressed: () => _handleResponse('no', fromButton: true),
+                child: Text('No'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+
+import 'package:flutter/material.dart';
+import 'ChatPage.dart';
+
+void main() {
+  runApp(ChatBotApp());
+}
+
+class ChatBotApp extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      home: ChatPage(),
+    );
+  }
+}
+
+
+class Rule {
+  String question;
+  Map<String, String> nextSteps;
+
+  Rule(this.question, this.nextSteps);
+}
+
+
+import 'Rule.dart';
+
+class RuleEngine {
+  final Map<String, Rule> rules;
+  String currentRuleKey = 'start';
+
+  RuleEngine() : rules = {
+    'start': Rule("Is the temperature high?", {'yes': 'hot', 'no': 'cold'}),
+    'hot': Rule("Is the wind strong?", {'yes': 'heatwave', 'no': 'hot_no_wind'}),
+    'cold': Rule("Is the sky cloudy?", {'yes': 'snow', 'no': 'cold_clear'}),
+    'heatwave': Rule("There's a high chance of a heatwave.", {}),
+    'hot_no_wind': Rule("It's hot, but without strong wind.", {}),
+    'snow': Rule("It's cold and snowy.", {}),
+    'cold_clear': Rule("It's cold, but the sky is clear.", {}),
+    // بعض القواعد الإضافية التي أقترحها:
+    'rain': Rule("Is it raining heavily?", {'yes': 'heavy_rain', 'no': 'light_rain'}),
+    'heavy_rain': Rule("Expect heavy rain and possible flooding.", {}),
+    'light_rain': Rule("There might be light rain, but nothing too serious.", {}),
+  };
+
+  String getNextStep(String currentRuleKey, String answer) {
+    var rule = rules[currentRuleKey];
+    if (rule != null && rule.nextSteps.containsKey(answer)) {
+      return rule.nextSteps[answer]!;
+    }
+    return 'end'; // إنهاء الدردشة إذا لم تكن هناك خطوة تالية
+  }
+
+  String getQuestion(String ruleKey) {
+    var rule = rules[ruleKey];
+    if (rule != null) {
+      return rule.question;
+    }
+    return "End of conversation."; // رسالة نهاية الدردشة إذا لم يتم العثور على قاعدة
+  }
+
+  String getConclusion() {
+    // تقديم استنتاج نهائي بناءً على القاعدة النهائية
+    switch (currentRuleKey) {
+      case 'heatwave':
+        return "Take precautions, a heatwave is expected.";
+      case 'snow':
+        return "Prepare for snow. Drive safely.";
+      case 'heavy_rain':
+        return "Warning: Heavy rain expected. Possible flooding.";
+      default:
+        return "Weather conditions are stable.";
+    }
+  }
+
+  void reset() {
+    currentRuleKey = 'start'; // إعادة تعيين القاعدة الحالية إلى البداية
+  }
+}
+
+
